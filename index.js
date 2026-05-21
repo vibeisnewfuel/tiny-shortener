@@ -21,16 +21,16 @@ app.post('/api/shorten', (req, res) => {
 });
 
 // GET /api/r/:code -> 302 redirect or 404
-//app.get('/api/r/:code', (req, res) => {
-//  const url = store.get(req.params.code);
-//  if (!url) return res.status(404).json({ error: 'not found' });
-// res.redirect(302, url);
-//});
+app.get('/api/r/:code', (req, res) => {
+  const url = store.get(req.params.code);
+  if (!url) return res.status(404).json({ error: 'not found' });
+ res.redirect(302, url);
+});
 
 // GET /api/r/:code -> deliberately broken to see CI fail
-app.get('/api/r/:code', (req, res) => {
-  res.status(500).send('oops');
-});
+//app.get('/api/r/:code', (req, res) => {
+//  res.status(500).send('oops');
+//});
 
 
 // Health check — pipelines will hit this later
