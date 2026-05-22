@@ -19,7 +19,7 @@ env:
   ECS_SERVICE:  tiny-shortener                                 # ← from discovery
   TASK_FAMILY:  default-tiny-shortener                                         # ← from discovery
   CONTAINER:    Main                                                     # ← from discovery
-  PUBLIC_URL:   ecs-express-gateway-alb-8c7b67f1-465073677.ap-southeast-2.elb.amazonaws.com  # ← from discovery
+  PUBLIC_URL:   ti-71ead734d9854275bf7d545a932843d8.ecs.ap-southeast-2.on.aws  # ← from discovery
 
 jobs:
   build-and-deploy:
@@ -69,5 +69,5 @@ jobs:
             --cluster $ECS_CLUSTER --services $ECS_SERVICE
 
       - name: Smoke test
-        run: curl --fail --retry 10 --retry-delay 15 https://$PUBLIC_URL/health --insecure
+        run: curl --fail --retry 10 --retry-delay 15 https://$PUBLIC_URL/health
 
