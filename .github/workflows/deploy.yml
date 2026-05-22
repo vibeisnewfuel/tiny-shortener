@@ -87,3 +87,34 @@ jobs:
           LOC=$(curl -sI $URL/api/r/$CODE | grep -i ^location | cut -d" " -f2 | tr -d "\r")
           test "$LOC" = "https://example.com"
           echo "✓ Round-trip OK: short code $CODE → $LOC"
+
+        - name: Notify Slack
+          if: always()                              # ← runs on success AND failure
+          uses: slackapi/slack-github-action@v2.0.0
+          with:
+            webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+            webhook-type: incoming-webhook
+            payload: |
+              text: "${{ job.status == 'success' && '✅' || '❌' }} Deploy ${{ job.status }} — `${{ github.repository }}`"
+              blocks:
+                - type: section
+                  text:
+                    type: mrkdwn
+                    text: "*${{ job.status == 'success' && '✅ Deploy succeeded' || '❌ Deploy FAILED' }}* — `${{ github.repository }}`"
+                - type: section
+                  fields:
+                    - type: mrkdwn
+                      text: "*Commit:*\n<${{ github.event.head_commit.url }}|`${{ github.sha }}`>"
+                    - type: mrkdwn
+                      text: "*By:*\n${{ github.actor }}"
+                    - type: mrkdwn
+                      text: "*Branch:*\n`${{ github.ref_name }}`"
+                    - type: mrkdwn
+                      text: "*Service:*\n<https://${{ env.PUBLIC_URL }}/health|/health>"
+                - type: actions
+                  elements:
+                    - type: button
+                      text:
+                        type: plain_text
+                        text: "View workflow run"
+                      url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
