@@ -1,74 +1,73 @@
 name: Deploy
-on:
-  push:
-    branches: [master]
-  workflow_dispatch:
+  on:
+    push:
+      branches: [master]
+    workflow_dispatch:
 
-concurrency:
-  group: deploy-prod
-  cancel-in-progress: false
+  concurrency:
+    group: deploy-prod
+    cancel-in-progress: false
 
-permissions:
-  id-token: write
-  contents: read
+  permissions:
+    id-token: write
+    contents: read
 
-env:
-  AWS_REGION:   ap-southeast-2
-  ECR_REPO:     tiny-shortener
-  ECS_CLUSTER:  tiny-shortener           # wizard names the cluster after the service
-  ECS_SERVICE:  tiny-shortener
-  TASK_FAMILY:  tiny-shortener
-  CONTAINER:    web                       # container name inside the task def
-  PUBLIC_URL:   tiny-shortener-1234.ap-southeast-2.elb.amazonaws.com   # ALB DNS from the wizard
+  env:
+    AWS_REGION:   ap-southeast-2                                          # ← from discovery
+    ECR_REPO:     tiny-shortener
+    ECS_CLUSTER:  default                                         # ← from discovery
+    ECS_SERVICE:  tiny-shortener                                 # ← from discovery
+    TASK_FAMILY:  default-tiny-shortener                                         # ← from discovery
+    CONTAINER:    Main                                                     # ← from discovery
+    PUBLIC_URL:   ecs-express-gateway-alb-8c7b67f1-465073677.ap-southeast-2.elb.amazonaws.com  # ← from discovery
 
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  jobs:
+    build-and-deploy:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::ACCOUNT:role/GhDeployTinyShortener
-          aws-region: ${{ env.AWS_REGION }}
+        - uses: aws-actions/configure-aws-credentials@v4
+          with:
+            role-to-assume: arn:aws:iam::460589075034:role/GhDeployTinyShortener   # ← your account ID
+            aws-region: ${{ env.AWS_REGION }}
 
-      - uses: aws-actions/amazon-ecr-login@v2
-        id: ecr
+        - uses: aws-actions/amazon-ecr-login@v2
+          id: ecr
 
-      - name: Set up buildx (multi-platform builds)
-        uses: docker/setup-buildx-action@v3
+        - name: Set up buildx (multi-platform builds)
+          uses: docker/setup-buildx-action@v3
 
-      - name: Build, tag, push (force linux/amd64 for Fargate)
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-        run: |
-          SHA=${GITHUB_SHA::7}
-          IMG=$REGISTRY/$ECR_REPO:$SHA
-          docker buildx build --platform=linux/amd64 -t $IMG --push .
-          echo "IMG=$IMG" >> $GITHUB_ENV
+        - name: Build, tag, push (force linux/amd64 for Fargate)
+          env:
+            REGISTRY: ${{ steps.ecr.outputs.registry }}
+          run: |
+            SHA=${GITHUB_SHA::7}
+            IMG=$REGISTRY/$ECR_REPO:$SHA
+            docker buildx build --platform=linux/amd64 -t $IMG --push .
+            echo "IMG=$IMG" >> $GITHUB_ENV
 
-      - name: Register new task definition revision with the new image
-        id: taskdef
-        run: |
-          # Get current task def JSON
-          CURRENT=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY \
-                    --query 'taskDefinition' --output json)
-          # Swap the container image to the SHA we just pushed
-          NEW=$(echo "$CURRENT" | jq --arg img "$IMG" --arg c "$CONTAINER" \
-                  '.containerDefinitions |= map(if .name == $c then .image=$img else . end)' | \
-                jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
-          REVISION=$(aws ecs register-task-definition --cli-input-json "$NEW" \
-                    --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "REVISION=$REVISION" >> $GITHUB_OUTPUT
+        - name: Register new task definition revision with the new image
+          id: taskdef
+          run: |
+            CURRENT=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY \
+                      --query 'taskDefinition' --output json)
+            NEW=$(echo "$CURRENT" | jq --arg img "$IMG" --arg c "$CONTAINER" \
+                    '.containerDefinitions |= map(if .name == $c then .image=$img else . end)' | \
+                  jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+            REVISION=$(aws ecs register-task-definition --cli-input-json "$NEW" \
+                      --query 'taskDefinition.taskDefinitionArn' --output text)
+            echo "REVISION=$REVISION" >> $GITHUB_OUTPUT
 
-      - name: Roll out to ECS (force a new deployment with the new revision)
-        run: |
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER --service $ECS_SERVICE \
-            --task-definition ${{ steps.taskdef.outputs.REVISION }} \
-            --force-new-deployment
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER --services $ECS_SERVICE
+        - name: Roll out to ECS (force a new deployment with the new revision)
+          run: |
+            aws ecs update-service \
+              --cluster $ECS_CLUSTER --service $ECS_SERVICE \
+              --task-definition ${{ steps.taskdef.outputs.REVISION }} \
+              --force-new-deployment
+            aws ecs wait services-stable \
+              --cluster $ECS_CLUSTER --services $ECS_SERVICE
 
-      - name: Smoke test
-        run: curl --fail --retry 10 --retry-delay 15 https://$PUBLIC_URL/health
+        - name: Smoke test
+          run: curl --fail --retry 10 --retry-delay 15 https://$PUBLIC_URL/health
+
