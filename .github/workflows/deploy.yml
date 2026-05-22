@@ -68,6 +68,21 @@ jobs:
           aws ecs wait services-stable \
             --cluster $ECS_CLUSTER --services $ECS_SERVICE
 
-      - name: Smoke test
-        run: curl --fail --retry 10 --retry-delay 15 https://$PUBLIC_URL/health
+      - name: Post-deploy smoke (health + round-trip)
+        run: |
+          URL=https://$PUBLIC_URL
 
+          # 1. Health endpoint must respond 200
+          curl --fail --retry 10 --retry-delay 15 $URL/health
+          echo "✓ /health OK"
+
+          # 2. Create a short code via the real API
+          CODE=$(curl -sf -X POST $URL/api/shorten \
+            -H "Content-Type: application/json" \
+            -d '{"url":"https://example.com"}' | jq -r .code)
+          echo "Created code: $CODE"
+
+          # 3. Resolve it — verify we get a 302 back to the original URL
+          LOC=$(curl -sI $URL/api/r/$CODE | grep -i ^location | cut -d" " -f2 | tr -d "\r")
+          test "$LOC" = "https://example.com"
+          echo "✓ Round-trip OK: short code $CODE → $LOC"
