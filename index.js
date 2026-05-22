@@ -1,4 +1,9 @@
-require('dotenv').config();              // loads .env into process.env (local dev only)
+// Top of index.js
+  if (process.env.NODE_ENV !== 'production') {
+    require('dotenv').config();
+  }
+
+// require('dotenv').config();              // loads .env into process.env (local dev only)
 
 const express = require('express');
 const { randomBytes } = require('node:crypto');
